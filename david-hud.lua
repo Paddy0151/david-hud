@@ -1,4 +1,4 @@
--- david-hud.lua | NO LICENSE | Assetto Corsa CSP online dashboard
+-- no-license-hud.lua | NO LICENSE | Assetto Corsa CSP online dashboard
 local defaults = {
   scale = 100, right = 24, bottom = 26, mph = false, dashboard = true,
   assists = true, shiftLights = true, details = false, alerts = true, theme = 1,

@@ -1,11 +1,13 @@
+-- david-hud.lua | NO LICENSE | Assetto Corsa CSP online dashboard
 local defaults = {
   scale = 100, right = 24, bottom = 26, mph = false, dashboard = true,
-  assists = true, shiftLights = true, details = false, alerts = true,
+  assists = true, shiftLights = true, details = false, alerts = true, theme = 1,
 }
-local settings = ac.storage(defaults, 'nightshift.dashboard.v2.')
+local settings = ac.storage(defaults, 'no_license.dashboard.v2.')
 local width, height = 444, 190
 local rpm, speed, seeded = 0, 0, false
-local showSettings, showAlerts = false, false
+local menuOpen, page = false, 1
+local pages = { 'Display', 'Telemetry', 'Status' }
 local scale = 1
 
 local black = rgbm(0.038, 0.032, 0.047, 0.94)
@@ -20,6 +22,11 @@ local lilac = rgbm(0.78, 0.61, 1, 1)
 local amber = rgbm(1, 0.71, 0.34, 1)
 local red = rgbm(1, 0.28, 0.43, 1)
 local green = rgbm(0.47, 0.91, 0.37, 1)
+local themes = {
+  { name = 'Violet', primary = violet, light = lilac },
+  { name = 'Ice', primary = rgbm(0.30, 0.77, 1, 1), light = rgbm(0.63, 0.88, 1, 1) },
+  { name = 'Amber', primary = amber, light = rgbm(1, 0.85, 0.56, 1) },
+}
 local font = ui.DWriteFont('Segoe UI'):weight(ui.DWriteFont.Weight.Bold)
 
 local function saturate(value)
@@ -101,7 +108,7 @@ local function drawCluster(car)
   end
   centered(shift and 'SHIFT UP' or 'RPM', 131, 61, 140, 19, 12, shift and red or muted)
   centered(tostring(math.floor(rpm + 0.5)), 131, 79, 140, 34, 29, white)
-  centered('NIGHTSHIFT', 131, 114, 140, 15, 10, lilac)
+  centered('NO LICENSE', 131, 114, 140, 15, 10, lilac)
 
   local speedFill = saturate(speed / 360)
   arc(369, 79, 49, 122, 418, 1, track, 7)
@@ -134,33 +141,31 @@ local function drawCluster(car)
   ui.popDWriteFont()
 end
 
-local function toggle(key, title)
-  if ui.checkbox(title, settings[key]) then settings[key] = not settings[key] end
+local function hit(id, x, y, w, h)
+  ui.setCursor(vec2(x, y))
+  return ui.invisibleButton('##nl_' .. id, vec2(w, h))
 end
 
-local function drawSettings()
-  box(0, 0, 280, 323, black, 12)
-  ui.setCursor(vec2(14, 10))
-  ui.textColored('NIGHTSHIFT  /  UI SETTINGS', lilac)
-  ui.separator()
-  toggle('dashboard', 'Show dashboard')
-  toggle('mph', 'Use MPH')
-  toggle('shiftLights', 'Shift lights')
-  toggle('assists', 'ABS and TC activity')
-  toggle('details', 'Fuel, boost and pedal inputs')
-  toggle('alerts', 'Pit and low fuel alerts')
-  ui.separator()
-  ui.setNextItemWidth(155)
-  settings.scale = math.floor(ui.slider('HUD scale', settings.scale, 65, 150, '%.0f%%') + 0.5)
-  ui.setNextItemWidth(155)
-  settings.right = math.floor(ui.slider('Right inset', settings.right, 0, 400, '%.0f px') + 0.5)
-  ui.setNextItemWidth(155)
-  settings.bottom = math.floor(ui.slider('Bottom inset', settings.bottom, 0, 300, '%.0f px') + 0.5)
-  if ui.button('Reset HUD settings') then
-    for key, value in pairs(defaults) do settings[key] = value end
-  end
-  ui.sameLine()
-  if ui.button('Close') then showSettings = false end
+local function button(id, text, x, y, w, h, active)
+  box(x, y, w, h, active and track or panel, 7)
+  centered(text, x, y, w, h, 13, active and lilac or white)
+  return hit(id, x, y, w, h)
+end
+
+local function toggle(key, title, y)
+  local enabled = settings[key]
+  label(title, 16, y + 7, 14, white)
+  box(272, y + 6, 36, 19, enabled and violet or track, 10)
+  circle(enabled and 298 or 282, y + 15.5, 6, white)
+  if hit(key, 12, y, 300, 31) then settings[key] = not enabled end
+end
+
+local function slider(key, title, y, low, high, suffix)
+  label(title, 16, y + 5, 13, muted)
+  ui.setCursor(vec2(167, y + 2))
+  ui.setNextItemWidth(141)
+  local value, changed = ui.slider('##nl_' .. key, settings[key], low, high, '%.0f' .. suffix)
+  if changed then settings[key] = math.floor(value + 0.5) end
 end
 
 local function alertText(car)
@@ -169,23 +174,66 @@ local function alertText(car)
   if car.isInPitlane then return 'PIT LANE' end
 end
 
-local function drawActionBar(alert)
-  box(0, 0, 164, 40, black, 12)
-  box(3, 3, 44, 34, panel, 9)
-  box(51, 3, 110, 34, panel, 9)
+local function drawMenu(car, sim, alert)
+  box(0, 0, 324, 306, black, 14)
+  box(0, 0, 324, 57, panel, 14)
+  box(15, 14, 4, 29, violet, 2)
   ui.pushDWriteFont(font)
-  centered('!', 3, 3, 44, 34, 19, alert and amber or muted)
-  if alert then circle(39, 11, 3, amber) end
-  centered('Action Bar', 51, 3, 110, 34, 15, white)
+  label('NO LICENSE', 28, 9, 19, white)
+  label('DRIVER DISPLAY', 29, 33, 10, lilac)
+  if button('close', 'X', 280, 12, 31, 31, false) then menuOpen = false end
+
+  for i, title in ipairs(pages) do
+    if button('tab' .. i, title, 12 + (i - 1) * 101, 66, 98, 32, i == page) then page = i end
+  end
+
+  if page == 1 then
+    toggle('dashboard', 'Show dashboard', 108)
+    toggle('mph', 'Use MPH', 140)
+    slider('scale', 'HUD scale', 174, 65, 150, '%%')
+    slider('right', 'Right inset', 202, 0, 400, ' px')
+    slider('bottom', 'Bottom inset', 230, 0, 300, ' px')
+    if button('resetPlacement', 'Reset placement', 12, 266, 145, 28, false) then
+      settings.scale, settings.right, settings.bottom = defaults.scale, defaults.right, defaults.bottom
+    end
+    if button('theme', 'Accent: ' .. (themes[settings.theme] or themes[1]).name, 163, 266, 149, 28, false) then
+      settings.theme = settings.theme % #themes + 1
+    end
+  elseif page == 2 then
+    toggle('shiftLights', 'Shift lights', 108)
+    toggle('assists', 'ABS and TC indicators', 143)
+    toggle('details', 'Fuel, boost and pedal inputs', 178)
+    toggle('alerts', 'Pit and low fuel alerts', 213)
+    if button('resetAll', 'Restore HUD defaults', 12, 266, 300, 28, false) then
+      for key, value in pairs(defaults) do settings[key] = value end
+    end
+  else
+    local connected = sim.isOnlineRace and car.isConnected
+    circle(22, 126, 4, connected and green or muted)
+    label(connected and 'Connected to server' or 'Offline', 35, 116, 15, white)
+    box(12, 147, 300, 51, panel, 7)
+    label('VEHICLE STATUS', 24, 153, 10, muted)
+    label(alert or (settings.alerts and 'No active alerts' or 'Alerts disabled'), 24, 169, 15, alert and amber or white)
+    box(12, 207, 300, 51, panel, 7)
+    label('FUEL REMAINING', 24, 214, 10, muted)
+    label(car.maxFuel > 0 and string.format('%.1f / %.1f L', car.fuel, car.maxFuel) or 'Unavailable',
+      24, 231, 15, white)
+    label('NO LICENSE  /  HUD', 16, 274, 11, lilac)
+  end
   ui.popDWriteFont()
-  ui.setCursor(vec2(3, 3))
-  if ui.invisibleButton('##nightshiftAlerts', vec2(44, 34)) then
-    showAlerts, showSettings = not showAlerts, false
+end
+
+local function drawActionBar(alert)
+  box(0, 0, 193, 42, black, 11)
+  ui.pushDWriteFont(font)
+  if button('status', '!', 4, 4, 36, 34, menuOpen and page == 3) then
+    menuOpen, page = not (menuOpen and page == 3), 3
   end
-  ui.setCursor(vec2(51, 3))
-  if ui.invisibleButton('##nightshiftSettings', vec2(110, 34)) then
-    showSettings, showAlerts = not showSettings, false
+  if alert then circle(32, 12, 3.5, amber) end
+  if button('menu', 'NO LICENSE', 45, 4, 144, 34, menuOpen and page ~= 3) then
+    menuOpen, page = not (menuOpen and page ~= 3), 1
   end
+  ui.popDWriteFont()
 end
 
 function script.update(dt)
@@ -202,33 +250,24 @@ function script.drawUI()
   if not car or sim.isInMainMenu or sim.isReplayActive or sim.isPaused
     or (sim.focusedCar >= 0 and sim.focusedCar ~= 0) then return end
   local screen = ac.getUI().windowSize
-  if screen.x < 308 or screen.y < 410 then return end
+  if screen.x < 352 or screen.y < 390 then return end
+  local theme = themes[settings.theme] or themes[1]
+  violet, lilac = theme.primary, theme.light
 
   if settings.dashboard then
     scale = math.min(settings.scale / 100, (screen.x - 16) / width, (screen.y - 16) / height)
     local x = math.max(8, screen.x - width * scale - settings.right)
     local y = math.max(8, screen.y - height * scale - settings.bottom)
-    ui.transparentWindow('nightshift.cluster.v2', vec2(x, y), point(width, height),
+    ui.transparentWindow('no_license.cluster.v2', vec2(x, y), point(width, height),
       true, false, function() drawCluster(car) end)
   end
 
   scale = 1
   local alert = alertText(car)
-  ui.transparentWindow('nightshift.action.v2', vec2(screen.x - 188, 24), vec2(164, 40),
+  ui.transparentWindow('no_license.action', vec2(screen.x - 217, 24), vec2(193, 42),
     true, true, function() drawActionBar(alert) end)
-  if showSettings then
-    ui.transparentWindow('nightshift.settings.v2', vec2(screen.x - 304, 72), vec2(280, 323),
-      true, true, drawSettings)
-  elseif showAlerts then
-    ui.transparentWindow('nightshift.alerts.v2', vec2(screen.x - 244, 72), vec2(220, 76),
-      true, false, function()
-        box(0, 0, 220, 76, black, 12)
-        ui.pushDWriteFont(font)
-        label(alert or 'NO ACTIVE ALERTS', 14, 13, 14, alert and amber or white)
-        local online = sim.isOnlineRace and car.isConnected
-        circle(18, 48, 4, online and green or muted)
-        label(online and 'Connected to server' or 'Offline', 29, 40, 13, muted)
-        ui.popDWriteFont()
-      end)
+  if menuOpen then
+    ui.transparentWindow('no_license.menu', vec2(screen.x - 348, 74), vec2(324, 306),
+      true, true, function() drawMenu(car, sim, alert) end)
   end
 end
